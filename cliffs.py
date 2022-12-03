@@ -124,7 +124,7 @@ def get_policy_action(state, use_randomness=True, lookahead=False):
         if not lookahead:
             random_ct += 1
     else:
-        score = random.choice([s for s in scores if s == max(scores)])
+        score = max(scores)
         action = actions[scores.index(score)]
     return action
 
