@@ -34,7 +34,6 @@ verbose = False
 agent = None
 history = None
 step_ct = None
-random_ct = None
 
 # hyperparameters
 learning_rate = .5    # alpha
@@ -53,11 +52,10 @@ def debug(*args):
 
 def reset():
     debug('resetting')
-    global agent, history, step_ct, random_ct
+    global agent, history, step_ct
     agent = (0, height - 1)
     history = [agent]
     step_ct = 0
-    random_ct = 0
 
 
 def get_state():
@@ -65,6 +63,8 @@ def get_state():
 
 
 def log_state():
+    '''Print game board and status'''
+
     print('State:')
     for y in range(height):
         row = []
@@ -106,6 +106,7 @@ def is_done():
 
 
 def get_action_space():
+    '''Get all legal actions for current agent position'''
     actions = []
     for action, (dx, dy) in action_map.items():
         x, y = agent
@@ -114,15 +115,15 @@ def get_action_space():
     return actions
 
 
-def get_policy_action(state, use_randomness=True, lookahead=False):
-    global random_ct
+def get_policy_action(state, use_randomness=True):
+    '''Choose next action based on policy
+        use_randomness: allow random selection based on `randomness` hyperparam
+    '''
     actions = get_action_space()
     scores = [Q[(*state, action_keys.index(a))] for a in actions]
     if use_randomness and (random.random() < randomness):
         idx = random.choice([i for i, _ in enumerate(scores)])
         action = actions[idx]
-        if not lookahead:
-            random_ct += 1
     else:
         score = max(scores)
         action = actions[scores.index(score)]
@@ -130,6 +131,7 @@ def get_policy_action(state, use_randomness=True, lookahead=False):
 
 
 def update():
+    '''Main update method for agent, called until episode is done'''
     global Q
     tot_reward = 0
     done = False
@@ -156,8 +158,7 @@ def update():
 
         # look ahead to update Q
         if not done:
-            next_action = get_policy_action(
-                next_state, use_randomness=use_sarsa, lookahead=True)
+            next_action = get_policy_action(next_state, use_randomness=use_sarsa)
             next_action_idx = action_keys.index(next_action)
             next_qval = Q[(*next_state, next_action_idx)]
         else:
@@ -177,6 +178,7 @@ def update():
 
 
 def step(action):
+    '''Move agent in environment'''
     global step_ct, agent
     dx, dy = action_map.get(action)
     agent = (agent[0] + dx, agent[1] + dy)
@@ -186,6 +188,7 @@ def step(action):
 
 
 def run_episode():
+    '''Update agent until environment is in terminal state'''
     reset()
     tot_rewards = 0
     while True:
@@ -197,19 +200,16 @@ def run_episode():
 
 
 def train(episode_ct):
+    '''Run multiple episodes, return stats'''
     episode_rewards = []
     tot_steps = 0
-    tot_random = 0
     for _ in tqdm(range(episode_ct)):
         ep_tot_rewards = run_episode()
         episode_rewards.append(ep_tot_rewards)
         tot_steps += step_ct
-        tot_random += random_ct
     return dict(
         rewards=episode_rewards,
         tot_steps=tot_steps,
-        tot_random=tot_random,
-        pct_random=(tot_random / tot_steps) * 100,
         sa_pairs=len(Q[Q != 0]),
     )
 
