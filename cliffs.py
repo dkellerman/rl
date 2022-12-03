@@ -135,6 +135,9 @@ def update():
     done = False
     state = get_state()
 
+    # this performs n-steps per update, to allow for future
+    # eligibility tracing, but currently it's no different than just
+    # doing one step at a time
     for t in range(steps_per_update):
         action = get_policy_action(state)
         action_idx = action_keys.index(action)
