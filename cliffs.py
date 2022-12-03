@@ -16,7 +16,6 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 from pprint import pprint
-from collections import defaultdict
 from tqdm import tqdm
 
 
@@ -38,20 +37,13 @@ step_ct = None
 random_ct = None
 
 # hyperparameters
-learning_rate = .5
-epsilon = .1
-discount = 1.0
+learning_rate = .5    # alpha
+randomness = .1       # epsilon
+discount = 1.0        # gamma
+steps_per_update = 3  # T (n steps)
 use_sarsa = True
 
 Q = np.zeros((width, height, len(action_map)))
-
-
-def get_qval(state, action):
-    return Q[(*state, action_keys.index(action))]
-
-
-def set_qval(state, action, val):
-    Q[(*state, action_keys.index(action))] = val
 
 
 def debug(*args):
@@ -122,11 +114,11 @@ def get_action_space():
     return actions
 
 
-def get_policy_action(state, use_epsilon=True, lookahead=False):
+def get_policy_action(state, use_randomness=True, lookahead=False):
     global random_ct
     actions = get_action_space()
-    scores = [get_qval(state, a) for a in actions]
-    if use_epsilon and (random.random() < epsilon):
+    scores = [Q[(*state, action_keys.index(a))] for a in actions]
+    if use_randomness and (random.random() < randomness):
         idx = random.choice([i for i, _ in enumerate(scores)])
         action = actions[idx]
         if not lookahead:
@@ -137,49 +129,64 @@ def get_policy_action(state, use_epsilon=True, lookahead=False):
     return action
 
 
-def step():
-    global step_ct, agent, Q
+def update():
+    global Q
+    tot_reward = 0
+    done = False
     state = get_state()
-    action = get_policy_action(state)
-    qval = get_qval(state, action)
 
-    # log all action values
-    debug('step', step_ct + 1, state, 'action space:')
-    for a in get_action_space():
-        debug('\t', a, get_qval(state, a), '[*]' if a == action else '')
+    for t in range(steps_per_update):
+        action = get_policy_action(state)
+        action_idx = action_keys.index(action)
+        qval = Q[(*state, action_idx)]
 
-    # take action, make observation
+        # log all action values
+        debug('step', '[t=%d]' % t, step_ct + 1, state, 'action space:')
+        for a in get_action_space():
+            debug('\t', a, Q[(*state, action_keys.index(a))],
+                  '[*]' if a == action else '')
+
+        # take action
+        next_state, reward, done = step(action)
+        tot_reward += reward
+        debug('\t', 'taken:', action, 'reward:', reward, 'done:', done)
+
+        # look ahead to update Q
+        if not done:
+            next_action = get_policy_action(
+                next_state, use_randomness=use_sarsa, lookahead=True)
+            next_action_idx = action_keys.index(next_action)
+            next_qval = Q[(*next_state, next_action_idx)]
+        else:
+            next_qval = 0
+
+        td_error = reward + discount * next_qval - qval
+        new_qval = qval + (learning_rate * td_error)
+        Q[(*state, action_idx)] = new_qval
+
+        debug('\tupdated qval:', new_qval)
+
+        if done:
+            break
+        state = next_state
+
+    return tot_reward, done
+
+
+def step(action):
+    global step_ct, agent
     dx, dy = action_map.get(action)
     agent = (agent[0] + dx, agent[1] + dy)
-    observation, reward, done = get_state(), get_reward(), is_done()
-
-    # log action result
-    debug('\t', 'taken:', action, 'reward:', reward, 'done:', done)
-
-    # look ahead to update Q
-    if not done:
-        next_action = get_policy_action(
-            observation, use_epsilon=use_sarsa, lookahead=True)
-        next_qval = get_qval(observation, next_action)
-    else:
-        next_qval = 0
-
-    new_qval = qval + \
-        (learning_rate * (reward + ((discount * next_qval) - qval)))
-    set_qval(state, action, new_qval)
-    debug('\tupdated qval:', new_qval)
-
     step_ct += 1
     history.append(agent)
-
-    return reward, done
+    return get_state(), get_reward(), is_done()
 
 
 def run_episode():
     reset()
     tot_rewards = 0
     while True:
-        reward, done = step()
+        reward, done = update()
         tot_rewards += reward
         if done:
             break
@@ -200,7 +207,7 @@ def train(episode_ct):
         tot_steps=tot_steps,
         tot_random=tot_random,
         pct_random=(tot_random / tot_steps) * 100,
-        sa_pairs=len(Q),
+        sa_pairs=len(Q[Q != 0]),
     )
 
 
@@ -222,15 +229,15 @@ def log_training_stats(stats):
 def play():
     '''Run single non-random episode'''
 
-    global epsilon, verbose
-    _old_e = epsilon
-    epsilon = 0
+    global randomness, verbose
+    _old_r = randomness
+    randomness = 0
     verbose = True
 
     run_episode()
     log_state()
 
-    epsilon = _old_e
+    randomness = _old_r
     verbose = False
 
 
